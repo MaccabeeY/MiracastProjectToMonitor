@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
+
 public class MiracastTarget {
     [StructLayout(LayoutKind.Sequential)] public struct LUID { public uint LowPart; public int HighPart; }
     [StructLayout(LayoutKind.Sequential)] public struct DISPLAYCONFIG_RATIONAL { public uint Numerator; public uint Denominator; }

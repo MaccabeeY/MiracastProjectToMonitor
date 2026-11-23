@@ -69,6 +69,7 @@ function Exit-WithCleanup([string]$Message) {
 [MiracastTarget]::SetWifiDirectEnabled($true) | Out-Null
 Start-Sleep -Milliseconds 500
 
+
 # =============================================================
 # 6. Open CONNECT panel
 # =============================================================
@@ -151,8 +152,6 @@ for ($i = 0; $i -lt 60; $i++) {
 }
 
 if ($Connected) {
-    # Use runnhide.vbs and args must be quotes as here, since "Start-Process" somehow interfers with DisplaySwitch's abiltiy to utilize its argument
-#    Start-Process "C:\Users\PEP\_Software\Bat\runnhide.vbs" -ArgumentList "DisplaySwitch.exe /$Mode"
     [MiracastTarget]::SetMode($Mode) | Out-Null
     for ($j = 0; $j -lt 48; $j++) {
         if ([MiracastTarget]::IsModeActive($Mode)) {
@@ -171,6 +170,5 @@ if ($Connected) {
 # =============================================================
 # 9. Spawn hidden disconnect.ps1 popup watcher
 # =============================================================
-#Start-Process "C:\Users\PEP\_Software\Bat\runnhide.vbs" -ArgumentList "powershell.exe -STA -ExecutionPolicy Bypass -File `"$ScriptDir\ProjectToMonitorWaitToClose.ps1`""
 $wsh = New-Object -ComObject WScript.Shell
 $wsh.Run("powershell.exe -STA -ExecutionPolicy Bypass -File `"$ScriptDir\MiracastProjectToMonitorWaitToClose.ps1`"", 0, $false) | Out-Null

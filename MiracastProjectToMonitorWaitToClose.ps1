@@ -50,7 +50,6 @@ $Form.Add_Shown({ $Form.Visible = $true; $Form.Activate() })
 [void]$Form.ShowDialog()
 
 if ([MiracastTarget]::IsMiracastActive()) {
-#    Start-Process "C:\Users\PEP\_Software\Bat\runnhide.vbs" -ArgumentList "DisplaySwitch.exe /internal"
     [MiracastTarget]::Disconnect() | Out-Null
 }
 [MiracastTarget]::SetWifiDirectEnabled($false) | Out-Null
