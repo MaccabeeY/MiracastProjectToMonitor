@@ -1,0 +1,9 @@
+#.idea
+#*.WinMerge
+**/v1.OLD/**
+MiracastProjectToMonitor - Public Distribution Plan.docx
+*Google Search.txt
+*Google Search.txt
+~*
+!.gitignore
+!*/
