@@ -153,7 +153,7 @@ public class MiracastTarget {
             }
         } catch { return -1; }
         if (bestDevInst == 0) return -1;
-        return enable ? (int)CM_Enable_DevNode(bestDevInst, 0) : (int)CM_Disable_DevNode(bestDevInst, 0);
+        return enable ? (int)CM_Enable_DevNode(bestDevInst, 0) : (int)CM_Disable_DevNode(bestDevInst, 0x00000008); // 0x08 = CM_DISABLE_PERSIST
     }
 
     public static int Disconnect() {

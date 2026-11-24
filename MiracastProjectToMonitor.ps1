@@ -40,7 +40,7 @@ Add-Type -AssemblyName UIAutomationClient
 # =============================================================
 # 3. Protect against "running over itself"
 # =============================================================
-if ([System.Windows.Forms.Screen]::AllScreens.Count -gt 1) {
+if (Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like "*MiracastProjectToMonitor.ps1*" }) {
     Write-Host "Projection is already connected.  Press any key to exit..." -ForegroundColor Yellow
     $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
     exit
@@ -52,14 +52,22 @@ if ([System.Windows.Forms.Screen]::AllScreens.Count -gt 1) {
 # =============================================================
 $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 . "$ScriptDir\MiracastHelper.ps1"
+Import-Module "$ScriptDir\SystemHelper.psm1" -Force
 
 
 # =============================================================
 # 5. Initializations
 # =============================================================
 function Exit-WithCleanup([string]$Message) {
+    Set-ParentWindowFocus $true
+    Start-Sleep -Milliseconds 500
     [MiracastTarget]::SetWifiDirectEnabled($false) | Out-Null
+    Write-Host ""
     Write-Host $Message -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Miracast Wi-Fi adapter now disabled." -ForegroundColor Yellow
+    Write-Host ""
+    [console]::beep(400, 800)
     Write-Host "  Press any key to exit..." -ForegroundColor Red
     $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
     exit 1
@@ -68,6 +76,8 @@ function Exit-WithCleanup([string]$Message) {
 [MiracastTarget]::CaptureBaseline()
 [MiracastTarget]::SetWifiDirectEnabled($true) | Out-Null
 Start-Sleep -Milliseconds 500
+Write-Host "Miracast Wi-Fi adapter now active." -ForegroundColor Yellow
+Write-Host ""
 
 
 # =============================================================
@@ -126,7 +136,7 @@ if ($focusedName -notlike "*$Target*") {
     Exit-WithCleanup "Focus verification failed for '$Target' (focused: '$focusedName').  Aborting."
 }
 
-Write-Host "Executing the connection." -ForegroundColor Cyan
+Write-Host "Executing the connection to '$Target'." -ForegroundColor Cyan
 Write-Host ""
 try {
     $invokePattern = $targetItem.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
@@ -139,7 +149,7 @@ try {
 # =============================================================
 # 8. Set preferred mode and give user the flyout
 # =============================================================
-Write-Host "Setting preferred mode." -ForegroundColor Cyan
+Write-Host "Starting projection." -ForegroundColor Cyan
 Write-Host ""
 $Connected = $false
 for ($i = 0; $i -lt 60; $i++) {
@@ -152,6 +162,8 @@ for ($i = 0; $i -lt 60; $i++) {
 }
 
 if ($Connected) {
+    Write-Host "Setting chosen '$Mode' mode." -ForegroundColor Cyan
+    Write-Host ""
     [MiracastTarget]::SetMode($Mode) | Out-Null
     for ($j = 0; $j -lt 48; $j++) {
         if ([MiracastTarget]::IsModeActive($Mode)) {
