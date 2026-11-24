@@ -107,12 +107,6 @@ function Set-ParentWindowFocus([bool]$TopMost = $false) {
             [void][Win32ConsoleFocus]::ShowWindow($h, 9) # SW_RESTORE
         }
 
-        # Unlock foreground lock with null packet & pull terminal to front with active keyboard focus
-#        $i = New-Object Win32ConsoleFocus+INPUT
-#        $i.type = 1
-#        [void][Win32ConsoleFocus]::SendInput(1, [ref]$i, 40)
-#        [void][Win32ConsoleFocus]::SetForegroundWindow($h)
-#        Start-Sleep -Milliseconds 100
         Set-AttachThread $TopMost
     }
 }
