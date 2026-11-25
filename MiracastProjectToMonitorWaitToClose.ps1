@@ -30,8 +30,8 @@ if (-not $Connected) {
 # 2. Show minimizable popup window
 # =============================================================
 $Form = New-Object System.Windows.Forms.Form
-$Form.Text = "Wireless Display"
-$Form.Size = New-Object System.Drawing.Size(320, 120)
+$Form.Text = "Miracast Project to Monitor"
+$Form.Size = New-Object System.Drawing.Size(380, 145)
 $Form.StartPosition = "CenterScreen"
 $Form.FormBorderStyle = "FixedSingle"
 $Form.MinimizeBox = $true
@@ -39,7 +39,7 @@ $Form.MaximizeBox = $false
 $Form.TopMost = $true
 
 $Label = New-Object System.Windows.Forms.Label
-$Label.Text = "Projection: close to disconnect."
+$Label.Text = "Projection Active: close to disconnect."
 $Label.AutoSize = $false
 $Label.TextAlign = "MiddleCenter"
 $Label.Dock = "Fill"

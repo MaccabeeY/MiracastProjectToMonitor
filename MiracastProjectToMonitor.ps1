@@ -79,6 +79,7 @@ function Exit-WithCleanup([string]$Message) {
     exit 1
 }
 
+
 function Show-ReceiverPickerMenu([string[]]$Receivers, [string]$Notice = "") {
     Set-ParentWindowFocus $false
     Start-Sleep -Milliseconds 150
@@ -87,24 +88,52 @@ function Show-ReceiverPickerMenu([string[]]$Receivers, [string]$Notice = "") {
         Write-Host $Notice -ForegroundColor Yellow
         Write-Host ""
     }
-    Write-Host "Available Miracast Receivers:" -ForegroundColor Cyan
-    for ($idx = 0; $idx -lt $Receivers.Count; $idx++) {
-        Write-Host "  [$($idx + 1)] $($Receivers[$idx])" -ForegroundColor White
+
+    # Build single-key labels: 1-9, then A-Z (excluding R, which is reserved for Rescan)
+    $keyLabels = [System.Collections.Generic.List[string]]::new()
+    for ($n = 1; $n -le 9; $n++) { $keyLabels.Add($n.ToString()) }
+    foreach ($c in 65..90) {
+        $ch = [char]$c
+        if ($ch -ne 'R') { $keyLabels.Add($ch.ToString()) }
+    }
+
+    $maxItems = [Math]::Min($Receivers.Count, $keyLabels.Count)
+    $lastLabel = if ($maxItems -gt 0) { $keyLabels[$maxItems - 1] } else { "" }
+
+    if ($maxItems -gt 0) {
+        Write-Host "Available Miracast Receivers:" -ForegroundColor Cyan
+        for ($idx = 0; $idx -lt $maxItems; $idx++) {
+            Write-Host "  [$($keyLabels[$idx])] $($Receivers[$idx])" -ForegroundColor White
+        }
     }
     Write-Host "  [R] Rescan" -ForegroundColor Yellow
     Write-Host "  [0] Cancel to exit" -ForegroundColor Red
+    if ($Receivers.Count -gt $keyLabels.Count) {
+        Write-Host "(More receivers available - showing $maxItems of $($Receivers.Count))" -ForegroundColor DarkGray
+    }
     Write-Host ""
+
+    $promptText = if ($maxItems -gt 0) { "Select a receiver [1-$lastLabel, R, 0]: " } else { "Select an option [R, 0]: " }
+    $invalidText = if ($maxItems -gt 0) { "Invalid selection. Press 1-$lastLabel, R to rescan, or 0 to cancel." } else { "Invalid selection. Press R to rescan, or 0 to cancel." }
+
     while ($true) {
-        $choice = (Read-Host "Select a receiver [0-$($Receivers.Count), R]").Trim()
+        Write-Host -NoNewline $promptText
+        $choice = [Console]::ReadKey($true).KeyChar.ToString().ToUpperInvariant()
+        Write-Host $choice
+
         if ($choice -eq "0") { return $null }
-        if ($choice -match "^[Rr]$") { return "__RESCAN__" }
-        $num = 0
-        if ([int]::TryParse($choice, [ref]$num) -and $num -ge 1 -and $num -le $Receivers.Count) {
-            return $Receivers[$num - 1]
+        if ($choice -eq "R") { return "__RESCAN__" }
+
+        if ($maxItems -gt 0) {
+            $matchedIdx = $keyLabels.IndexOf($choice)
+            if ($matchedIdx -ge 0 -and $matchedIdx -lt $maxItems) {
+                return $Receivers[$matchedIdx]
+            }
         }
-        Write-Host "Invalid selection. Enter 1-$($Receivers.Count), R to rescan, or 0 to cancel." -ForegroundColor Red
+        Write-Host $invalidText -ForegroundColor Red
     }
 }
+
 
 function Invoke-ConnectFlyoutTarget([string]$TargetPattern) {
     Write-Host "Opening the CONNECT panel and collecting available targets. Please wait..." -ForegroundColor Cyan
@@ -118,7 +147,11 @@ function Invoke-ConnectFlyoutTarget([string]$TargetPattern) {
     }
 
     if ($null -eq $connectWin) {
-        Exit-WithCleanup "CONNECT flyout is not open or lost focus.  Aborting."
+        return [pscustomobject]@{
+            Connected = $false
+            Receivers = @()
+            Reason    = "__FLYOUT_LOST_FOCUS__"
+        }
     }
 
     $listItemCond = New-Object System.Windows.Automation.PropertyCondition(
@@ -126,12 +159,28 @@ function Invoke-ConnectFlyoutTarget([string]$TargetPattern) {
         [System.Windows.Automation.ControlType]::ListItem
     )
 
+    $connectHwnd = [IntPtr]$connectWin.Current.NativeWindowHandle
     $wiredMonitors = [MiracastTarget]::GetWiredMonitorNames()
     $targetItem = $null
     $discoveredNames = New-Object System.Collections.Generic.List[string]
 
     for ($i = 0; $i -lt 15; $i++) { # 3 seconds
-        $items = $connectWin.FindAll([System.Windows.Automation.TreeScope]::Descendants, $listItemCond)
+        if ($connectHwnd -ne [IntPtr]::Zero -and -not [Win32ConsoleFocus]::IsWindowVisible($connectHwnd)) {
+            return [pscustomobject]@{
+                Connected = $false
+                Receivers = @()
+                Reason    = "__FLYOUT_LOST_FOCUS__"
+            }
+        }
+        try {
+            $items = $connectWin.FindAll([System.Windows.Automation.TreeScope]::Descendants, $listItemCond)
+        } catch {
+            return [pscustomobject]@{
+                Connected = $false
+                Receivers = @()
+                Reason    = "__FLYOUT_LOST_FOCUS__"
+            }
+        }
         $discoveredNames.Clear()
         foreach ($item in $items) {
             $itemName = $item.Current.Name
@@ -243,32 +292,38 @@ Write-Host ""
 Start-Sleep -Milliseconds 500
 
 
+# ///// UI Menu Driver Beginning //////
+$pickerNotice = ""
+:ExecuteConnection while ($true) {
+# /////////////////////////////////////
+
 # =============================================================
 # 7. Execute Connection
 # =============================================================
-$pickerNotice = ""
-while ($true) {
-    $attempt = Invoke-ConnectFlyoutTarget -TargetPattern $Target
-    if ($attempt.Connected) { break }
-
-    if ($attempt.Receivers.Count -eq 0) {
-        Exit-WithCleanup "No Miracast receivers found in CONNECT flyout list.  Aborting."
+$attempt = Invoke-ConnectFlyoutTarget -TargetPattern $Target
+if (-not $attempt.Connected) {
+    if ($attempt.Reason -eq "__FLYOUT_LOST_FOCUS__") {
+        $notice = "CONNECT flyout is not open or lost focus."
+    } elseif ($attempt.Receivers.Count -eq 0) {
+        $notice = "No Miracast receivers found in CONNECT flyout list."
+    } else {
+        $notice = if (-not [string]::IsNullOrWhiteSpace($pickerNotice)) { $pickerNotice } else { $attempt.Reason }
     }
 
-    $notice = if (-not [string]::IsNullOrWhiteSpace($pickerNotice)) { $pickerNotice } else { $attempt.Reason }
     $picked = Show-ReceiverPickerMenu -Receivers $attempt.Receivers -Notice $notice
     $pickerNotice = ""
 
     if ($null -eq $picked) {
-        Exit-WithCleanup "Miracast receiver selection cancelled by user."
+        Exit-WithCleanup "Miracast receiver selection cancelled."
     }
     if ($picked -eq "__RESCAN__") {
         $Target = ""
-        continue
+        continue ExecuteConnection
     }
 
     $Target = [WildcardPattern]::Escape($picked.Trim())
-    $pickerNotice = "'$picked' is no longer available - pick another receiver:"
+    $pickerNotice = "'$picked' is no longer available - select  another receiver:"
+    continue ExecuteConnection
 }
 
 
@@ -280,6 +335,7 @@ Write-Host ""
 $Connected        = $false
 $barSeen          = $false
 $handshakeDone    = $false
+$abortedEarly     = $false
 $connectStartTick = 0
 $msPollInterval   = 250
 $msHandshakeWait  = 4000
@@ -300,12 +356,14 @@ for ($i = 0; $i -lt $ticksMaxConnect; $i++) {
             Write-Host ""
         }
     } elseif ($barSeen) {
+        $abortedEarly = $true
         Write-Host ""
-        Write-Host "Projection attempt to '$Target' was disconnected or cancelled.  Aborting." -ForegroundColor Yellow
+        Write-Host "Projection attempt to '$Target' was unsuccessful." -ForegroundColor Yellow
         break
     }
 
     if (-not $handshakeDone -and $i -ge $ticksHandshake) {
+        $abortedEarly = $true
         Write-Host "No active projection receiver detected from '$Target'.  Aborting." -ForegroundColor Yellow
         break
     }
@@ -313,7 +371,7 @@ for ($i = 0; $i -lt $ticksMaxConnect; $i++) {
     if (-not $handshakeDone) {
         Write-Host "Checking for projection handshake from '$Target'... ($($i * $msPollInterval) ms)" -ForegroundColor Cyan
     } else {
-        Write-Host "Waiting for projection completion... ($(($i - $connectStartTick) * $msPollInterval) ms)" -ForegroundColor Cyan
+        Write-Host "Waiting for projection success... ($(($i - $connectStartTick) * $msPollInterval) ms) -- <Win+K> to cancel" -ForegroundColor Cyan
     }
 
     if ([MiracastTarget]::IsConnected()) {
@@ -336,12 +394,24 @@ if ($Connected) {
     if (-not $NoFlyout) {
         Start-Process "DisplaySwitch.exe"
     }
-} else {
-    Write-Host ""
-    Write-Host "Timed out waiting for '$Target' to project.  Aborting." -ForegroundColor Yellow
-    Stop-ConnectFlyoutAttempt
-    Exit-WithCleanup "Projection attempt to '$Target' failed."
+    break ExecuteConnection
 }
+
+Write-Host ""
+if (-not $abortedEarly) {
+    Write-Host "Timed out waiting for '$Target' to project." -ForegroundColor Yellow
+}
+Write-Host "Returning to receiver menu..." -ForegroundColor Yellow
+Write-Host ""
+Write-Host ""
+Stop-ConnectFlyoutAttempt
+$pickerNotice = ""
+$Target = ""
+
+# ///// UI Menu Driver Restart  ///////
+continue ExecuteConnection
+}
+# /////////////////////////////////////
 
 
 # =============================================================
