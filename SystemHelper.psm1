@@ -33,6 +33,7 @@ if (-not ('Win32ConsoleFocus' -as [type])) {
         [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr hAfter, int x, int y, int cx, int cy, uint flags);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr h, StringBuilder sb, int max);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder sb, int max);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr childAfter, string cls, string title);
     }'
 }
 
@@ -93,12 +94,15 @@ function Set-ParentWindowFocus([bool]$TopMost = $false) {
     }
     finally {
         if ($focusState -eq [FocusShellState]::BlackBar -and $blackBarHwnd -ne [IntPtr]::Zero) {
-            for ($i = 0; $i -lt 14; $i++) {
+            for ($i = 0; $i -lt 16; $i++) { # 32 seconds
                 if (-not [Win32ConsoleFocus]::IsWindowVisible($blackBarHwnd)) {
                     break
                 }
                 Write-Host "Waiting for system toolbar to close... ($($i * 2000) ms)" -ForegroundColor Cyan
                 Start-Sleep -Milliseconds 2000
+            }
+            if ([Win32ConsoleFocus]::IsWindowVisible($blackBarHwnd)) {
+                Write-Host "System toolbar has failed to close." -ForegroundColor Yellow
             }
         }
 
@@ -146,6 +150,7 @@ function Set-AttachThread([bool]$TopMost = $false) {
     }
 }
 
+
 function Set-WindowTopMost {
     $c = [Win32ConsoleFocus]::GetConsoleWindow()
     if ($c -eq [IntPtr]::Zero) { return }
@@ -155,4 +160,43 @@ function Set-WindowTopMost {
     [void][Win32ConsoleFocus]::SetWindowPos($h, [IntPtr](-1), 0, 0, 0, 0, 0x0043)
 }
 
-Export-ModuleMember -Function Set-ParentWindowFocus
+
+function Get-BlackBarStatus {
+    # NOTE: When connected, the bar also renders a right-side ControlType.Text "Disconnect" button.
+    #       If a future Windows build rewords the left status text, scanning for that button can serve as a fallback signal.
+    # TODO: Verify exact conditions and wording for "Couldn't connect" before adding a check for it.
+    $hwnd = [IntPtr]::Zero
+    while ($true) {
+        $hwnd = [Win32ConsoleFocus]::FindWindowEx([IntPtr]::Zero, $hwnd, 'Windows.UI.Core.CoreWindow', 'Wireless display toolbar')
+        if ($hwnd -eq [IntPtr]::Zero) { return '' }
+        if ([Win32ConsoleFocus]::IsWindowVisible($hwnd)) {
+            try {
+                $el = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
+                if ($el) {
+                    $cond = New-Object System.Windows.Automation.PropertyCondition(
+                        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+                        [System.Windows.Automation.ControlType]::Text
+                    )
+                    $txtEl = $el.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
+                    if ($txtEl) {
+                        return [string]$txtEl.Current.Name
+                    }
+                }
+            } catch { }
+            return ''
+        }
+    }
+}
+
+
+function Test-BlackBarVisible {
+    $hwnd = [IntPtr]::Zero
+    while ($true) {
+        $hwnd = [Win32ConsoleFocus]::FindWindowEx([IntPtr]::Zero, $hwnd, 'Windows.UI.Core.CoreWindow', 'Wireless display toolbar')
+        if ($hwnd -eq [IntPtr]::Zero) { return $false }
+        if ([Win32ConsoleFocus]::IsWindowVisible($hwnd)) { return $true }
+    }
+}
+
+
+Export-ModuleMember -Function Set-ParentWindowFocus, Get-BlackBarStatus, Test-BlackBarVisible

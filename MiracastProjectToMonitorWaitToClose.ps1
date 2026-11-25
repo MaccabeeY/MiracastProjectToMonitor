@@ -1,7 +1,9 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
-. "$ScriptDir\MiracastHelper.ps1"
+if (-not ([System.Management.Automation.PSTypeName]'MiracastTarget').Type) {
+    Add-Type -Path "$ScriptDir\MiracastHelper.cs"
+}
 
 
 try {
@@ -9,7 +11,7 @@ try {
 # 1. Wait for Miracast connection before showing popup
 # =============================================================
 $Connected = $false
-for ($i = 0; $i -lt 20; $i++) {
+for ($i = 0; $i -lt 20; $i++) { # 10 seconds
     if ([MiracastTarget]::IsMiracastActive()) {
         $Connected = $true
         break
