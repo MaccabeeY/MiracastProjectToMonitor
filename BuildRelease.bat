@@ -1,12 +1,12 @@
 @echo off
 setlocal
 
-set "VERSION=v1.0.0"
+set "VERSION=v1.1.0"
 for %%I in ("%~dp0.") do set "PROJ_NAME=%%~nxI"
 set "OUT_ZIP=%~dp0%PROJ_NAME%-%VERSION%.zip"
 
 if exist "%OUT_ZIP%" del /f /q "%OUT_ZIP%"
-git -C "%~dp0." archive --format=zip --prefix="%PROJ_NAME%/" HEAD -o "%OUT_ZIP%" -- . ":(exclude).gitignore" ":(exclude)%~nx0"
+git -C "%~dp0." archive --format=zip --prefix="%PROJ_NAME%/" HEAD -o "%OUT_ZIP%" -- . ":(exclude).gitignore" ":(exclude)%~nx0" ":(exclude,glob)test-*"
 
 if exist "%OUT_ZIP%" (
     echo Created: %OUT_ZIP%
