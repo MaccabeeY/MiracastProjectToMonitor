@@ -6,6 +6,72 @@ if (-not ([System.Management.Automation.PSTypeName]'MiracastTarget').Type) {
 }
 
 
+function New-ProjectionActiveUI {
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "Miracast Project to Monitor"
+    $form.Size = New-Object System.Drawing.Size(380, 155)
+    $form.StartPosition = "CenterScreen"
+    $form.FormBorderStyle = "FixedSingle"
+    $form.MinimizeBox = $true
+    $form.MaximizeBox = $false
+    $form.TopMost = $true
+
+    $label = New-Object System.Windows.Forms.Label
+    $label.Text = "Projection Active: close to disconnect."
+    $label.AutoSize = $false
+    $label.TextAlign = "MiddleCenter"
+    $label.Dock = "Fill"
+    $label.Font = New-Object System.Drawing.Font("Segoe UI", 11)
+    $form.Controls.Add($label)
+
+    return [pscustomobject]@{
+        Form  = $form
+        Label = $label
+    }
+}
+
+
+function Show-UnexpectedTerminationUI {
+    param(
+        [System.Windows.Forms.Form]$TargetForm,
+        [System.Windows.Forms.Label]$HeaderLabel
+    )
+
+    $TargetForm.Size = New-Object System.Drawing.Size(380, 155)
+
+    $HeaderLabel.Dock = "Top"
+    $HeaderLabel.Height = 42
+    $HeaderLabel.Padding = New-Object System.Windows.Forms.Padding(0, 10, 0, 0)
+    $HeaderLabel.TextAlign = "TopCenter"
+    $HeaderLabel.Text = "Unexpected Projection Termination."
+
+    $BodyLabel1 = New-Object System.Windows.Forms.Label
+    $BodyLabel1.Text = "Click <X> to close and then run"
+    $BodyLabel1.AutoSize = $true
+    $BodyLabel1.Location = New-Object System.Drawing.Point(80, 48)
+    $BodyLabel1.Font = $HeaderLabel.Font
+    $TargetForm.Controls.Add($BodyLabel1)
+
+    $BodyLabel2 = New-Object System.Windows.Forms.Label
+    $BodyLabel2.Text = "`"MiracastProjectToMonitor`""
+    $BodyLabel2.AutoSize = $true
+    $BodyLabel2.Location = New-Object System.Drawing.Point(85, 68)
+    $BodyLabel2.Font = $HeaderLabel.Font
+    $TargetForm.Controls.Add($BodyLabel2)
+
+    $BodyLabel3 = New-Object System.Windows.Forms.Label
+    $BodyLabel3.Text = "to start a new projection."
+    $BodyLabel3.AutoSize = $true
+    $BodyLabel3.Location = New-Object System.Drawing.Point(95, 88)
+    $BodyLabel3.Font = $HeaderLabel.Font
+    $TargetForm.Controls.Add($BodyLabel3)
+
+    $BodyLabel1.BringToFront()
+    $BodyLabel2.BringToFront()
+    $BodyLabel3.BringToFront()
+}
+
+
 try {
 # =============================================================
 # 1. Wait for Miracast connection before showing popup
@@ -29,33 +95,52 @@ if (-not $Connected) {
 # =============================================================
 # 2. Show minimizable popup window
 # =============================================================
-$Form = New-Object System.Windows.Forms.Form
-$Form.Text = "Miracast Project to Monitor"
-$Form.Size = New-Object System.Drawing.Size(380, 145)
-$Form.StartPosition = "CenterScreen"
-$Form.FormBorderStyle = "FixedSingle"
-$Form.MinimizeBox = $true
-$Form.MaximizeBox = $false
-$Form.TopMost = $true
+$ui = New-ProjectionActiveUI
+$Form = $ui.Form
+$Label = $ui.Label
 
-$Label = New-Object System.Windows.Forms.Label
-$Label.Text = "Projection Active: close to disconnect."
-$Label.AutoSize = $false
-$Label.TextAlign = "MiddleCenter"
-$Label.Dock = "Fill"
-$Label.Font = New-Object System.Drawing.Font("Segoe UI", 11)
-$Form.Controls.Add($Label)
+$script:CleanedUp = $false
+$InvokeCleanup = {
+    if ($script:CleanedUp) { return }
+    $script:CleanedUp = $true
+    if ([MiracastTarget]::IsMiracastActive()) {
+        [MiracastTarget]::Disconnect() | Out-Null
+    }
+    [MiracastTarget]::SetWifiDirectEnabled($false) | Out-Null
+}
 
-$Form.Add_Shown({ $Form.Visible = $true; $Form.Activate() })
+$PollIntervalMs = 1000
+$Timer = New-Object System.Windows.Forms.Timer
+$Timer.Interval = $PollIntervalMs
+$Timer.Add_Tick({
+    if (-not [MiracastTarget]::IsMiracastActive()) {
+        $Timer.Stop()
+        & $InvokeCleanup
+        Show-UnexpectedTerminationUI -TargetForm $Form -HeaderLabel $Label
+        if ($Form.WindowState -eq "Minimized") {
+            $Form.WindowState = "Normal"
+        }
+        $Form.Activate()
+    }
+})
+
+$Form.Add_Shown({
+    $Form.Visible = $true
+    $Form.Activate()
+    $Timer.Start()
+})
+
+$Form.Add_FormClosing({
+    $Timer.Stop()
+    $Timer.Dispose()
+    & $InvokeCleanup
+})
 
 # Stops here until you click X to close the popup
 [void]$Form.ShowDialog()
+}
 
-if ([MiracastTarget]::IsMiracastActive()) {
-    [MiracastTarget]::Disconnect() | Out-Null
-}
-[MiracastTarget]::SetWifiDirectEnabled($false) | Out-Null
-}
+
 # =============================================================
 # 3. Kill (cleanup) myself "not matter what"
 # =============================================================
